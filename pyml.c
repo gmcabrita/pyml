@@ -18,7 +18,7 @@ static PyObject *call(PyObject *self, PyObject *args) {
     char *f;
     int arg;
 
-    if(!PyArg_ParseTuple(args, "si:pyml_call", &f, &arg)) {
+    if(!PyArg_ParseTuple(args, "si:call", &f, &arg)) {
         PyErr_SetString(PyExc_Exception, "tuple not complete.");
         return NULL;
     }
