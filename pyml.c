@@ -43,7 +43,7 @@ static PyMethodDef pyml_methods[] = {
 };
 
 PyMODINIT_FUNC initpyml(void) {
-    (void) Py_InitModule(PYTHON, pyml_methods);
+    (void) Py_InitModule(MODULE, pyml_methods);
 }
 
 CAMLprim value call_python(value f, value arg) {
