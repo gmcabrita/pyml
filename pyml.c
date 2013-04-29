@@ -11,7 +11,7 @@
 #define ANSI_GREEN  "\x1b[32m"
 #define ANSI_RESET  "\x1b[0m"
 #define ANSI_RED    "\x1b[31m"
-#define MODULE "callingpy"
+#define MODULE "pyml"
 #define PYTHON "call"
 
 static PyObject *call(PyObject *self, PyObject *args) {
