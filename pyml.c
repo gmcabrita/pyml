@@ -42,6 +42,10 @@ static PyMethodDef pyml_methods[] = {
     {NULL, NULL, 0, NULL}
 };
 
+PyMODINIT_FUNC initpyml(void) {
+    (void) Py_InitModule(PYTHON, pyml_methods);
+}
+
 CAMLprim value call_python(value f, value arg) {
     PyObject *name, *module, *func, *args, *val;
     name = PyString_FromString(PYTHON);
@@ -108,7 +112,8 @@ static void run_tests() {
 int main(int argc, char **argv) {
     Py_Initialize(); // initialize python interpreter
     PySys_SetPath("");
-    Py_InitModule(MODULE, pyml_methods);
+    initpyml();
+    //Py_InitModule(MODULE, pyml_methods);
     caml_startup(argv);
 
     run_tests();
