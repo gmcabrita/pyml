@@ -26,6 +26,7 @@ static void raise_ocaml(char *exception) {
 
 static bool check_py() {
     PyObject *ptype, *pvalue, *ptraceback;
+    // fetch python exception information
     PyErr_Fetch(&ptype, &pvalue, &ptraceback);
     PyErr_Clear();
 
@@ -51,8 +52,8 @@ static bool check_ml(value res) {
 
     if (Is_exception_result(res)) {
         exc = Extract_exception(res);
-        //raise_python(String_val(caml_callback(*caml_named_value("exc_to_string"), exc)));
-        raise_python(String_val(caml_callback(*caml_named_value("Printexc.to_string"), exc)));
+        exc = caml_callback(*caml_named_value("Printexc.to_string"), exc);
+        raise_python(String_val(exc));
 
         return true;
     }
@@ -65,6 +66,7 @@ static PyObject *call(PyObject *self, PyObject *args) {
     int arg;
     CAMLlocal1(res);
 
+    // unpack the python tuple
     if(!PyArg_ParseTuple(args, "si:call", &f, &arg)) {
         PyErr_SetString(PyExc_Exception, "tuple not complete.");
         return NULL;
@@ -72,13 +74,14 @@ static PyObject *call(PyObject *self, PyObject *args) {
 
     value *func = caml_named_value(f);
     if (func == NULL) {
-        printf(ANSI_RED "\tFAIL\t" ANSI_RESET "Error retrieving function.\n");
         PyErr_SetString(PyExc_Exception, "function does not exist.");
 
         return NULL;
     } else {
+        // call ocaml function and check if an exception was raised
         res = caml_callback_exn(*func, Val_int(arg));
         if (check_ml(res)) return NULL;
+
         PyObject *result = Py_BuildValue("i", Int_val(res));
 
         return result;
@@ -97,17 +100,24 @@ PyMODINIT_FUNC initpyml(void) {
 
 CAMLprim value call_python(value f, value arg) {
     PyObject *name, *module, *func, *args, *val;
+    // load module
     name = PyString_FromString(PYTHON);
     module = PyImport_Import(name);
 
     PYERR_IF(module != NULL,
+        // build python tuple to use as argument
         args = PyTuple_New(1);
         val = PyLong_FromLong(Long_val(arg));
         PyTuple_SetItem(args, 0, val);
+
+        // call python function
         func = PyObject_GetAttrString(module, String_val(f));
         PYERR_IF(PyCallable_Check(func),
             PyObject *x = PyObject_CallObject(func, args);
+
+            // check if the python interpreter raised any exceptions
             if (check_py()) return Val_unit;
+
             Py_DECREF(val);
             Py_DECREF(args);
 
