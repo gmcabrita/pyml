@@ -1,11 +1,13 @@
 #include <Python.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <assert.h>
 
 #include <caml/alloc.h>
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 #include <caml/callback.h>
+#include <caml/fail.h>
 
 #define PYERR_IF(boolean, body) if(boolean){body}else{PyErr_Print();}
 #define ANSI_GREEN  "\x1b[32m"
@@ -14,9 +16,54 @@
 #define MODULE "pyml"
 #define PYTHON "call"
 
+static void raise_python(char *exception) {
+    PyErr_SetString(PyExc_Exception, exception);
+}
+
+static void raise_ocaml(char *exception) {
+    caml_raise_with_string(*caml_named_value("pyml_exception"), exception);
+}
+
+static bool check_py() {
+    PyObject *ptype, *pvalue, *ptraceback;
+    PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+    PyErr_Clear();
+
+    if (ptype != NULL) {
+        raise_ocaml(PyString_AsString(PyObject_Str(pvalue)));
+
+        Py_XDECREF(ptype);
+        Py_XDECREF(pvalue);
+        Py_XDECREF(ptraceback);
+
+        return true;
+    }
+
+    Py_XDECREF(ptype);
+    Py_XDECREF(pvalue);
+    Py_XDECREF(ptraceback);
+
+    return false;
+}
+
+static bool check_ml(value res) {
+    CAMLlocal1(exc);
+
+    if (Is_exception_result(res)) {
+        exc = Extract_exception(res);
+        //raise_python(String_val(caml_callback(*caml_named_value("exc_to_string"), exc)));
+        raise_python(String_val(caml_callback(*caml_named_value("Printexc.to_string"), exc)));
+
+        return true;
+    }
+
+    return false;
+}
+
 static PyObject *call(PyObject *self, PyObject *args) {
     char *f;
     int arg;
+    CAMLlocal1(res);
 
     if(!PyArg_ParseTuple(args, "si:call", &f, &arg)) {
         PyErr_SetString(PyExc_Exception, "tuple not complete.");
@@ -30,7 +77,9 @@ static PyObject *call(PyObject *self, PyObject *args) {
 
         return NULL;
     } else {
-        PyObject *result = Py_BuildValue("i", Int_val(caml_callback(*func, Val_int(arg))));
+        res = caml_callback_exn(*func, Val_int(arg));
+        if (check_ml(res)) return NULL;
+        PyObject *result = Py_BuildValue("i", Int_val(res));
 
         return result;
     }
@@ -58,6 +107,7 @@ CAMLprim value call_python(value f, value arg) {
         func = PyObject_GetAttrString(module, String_val(f));
         PYERR_IF(PyCallable_Check(func),
             PyObject *x = PyObject_CallObject(func, args);
+            if (check_py()) return Val_unit;
             Py_DECREF(val);
             Py_DECREF(args);
 
@@ -105,8 +155,15 @@ static void run_ocaml_test(char *f, int expected) {
 }
 
 static void run_tests() {
+    // run simple call tests
     run_python_test("test_call", 10);
     run_ocaml_test("test_call", 10);
+
+    // run exception raise/catch test
+    run_python_test("test_exception", 1);
+    run_python_test("test_custom_exception", 1);
+    run_ocaml_test("test_exception", 1);
+    run_ocaml_test("test_custom_exception", 1);
 }
 
 int main(int argc, char **argv) {

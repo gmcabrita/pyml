@@ -1,6 +1,6 @@
 OCAMLC?=ocamlc
 PYTHON?=python2.7
-CC=gcc -fPIC
+CC=gcc -fPIC -std=c99
 
 default:
 	mkdir -p bin
