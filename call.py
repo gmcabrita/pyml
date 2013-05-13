@@ -14,14 +14,14 @@ def test_raise(n):
 
 def test_custom_exception():
     try:
-        pyml.call("test_raise", 0)
+        pyml.call("test_raise", ["0"])
     except:
         return 1
 
 
 def test_exception():
     try:
-        pyml.call("divide_by", 0)
+        pyml.call("divide_by", ["0"])
     except:
         return 1
 
@@ -30,5 +30,13 @@ def divide_by(n):
     return 5 / n
 
 
+def divide(x, y):
+    return x / y
+
+
+def test_n_args():
+    return pyml.call("divide", ["10", "2"])
+
+
 def test_call():
-    return pyml.call("pass_integer", 10)
+    return pyml.call("pass_integer", ["10"])

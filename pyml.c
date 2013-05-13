@@ -1,5 +1,6 @@
 #include <Python.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
 
@@ -61,16 +62,33 @@ static bool check_ml(value res) {
     return false;
 }
 
+static value *unpack_python(PyObject *args) {
+    int list_size = (int)PyList_Size(args);
+    value *arg_array = malloc(sizeof(value) * list_size);
+
+    for(int i=0; i < list_size; i++) {
+        char *tmp = PyString_AsString(PyList_GetItem(args, (Py_ssize_t)i));
+        arg_array[i] = Val_int(atoi(tmp));
+    }
+
+    return arg_array;
+}
+
 static PyObject *call(PyObject *self, PyObject *args) {
     char *f;
-    int arg;
+    PyListObject *arg;
     CAMLlocal1(res);
 
     // unpack the python tuple
-    if(!PyArg_ParseTuple(args, "si:call", &f, &arg)) {
+    if(!PyArg_ParseTuple(args, "sO!:call", &f, &PyList_Type, &arg)) {
         PyErr_SetString(PyExc_Exception, "tuple not complete.");
         return NULL;
     }
+
+    // unpack the list of python arguments
+    value *unpacked_args = unpack_python((PyObject*)arg);
+
+    int argc = (int)PyList_Size((PyObject*)arg);
 
     value *func = caml_named_value(f);
     if (func == NULL) {
@@ -79,7 +97,7 @@ static PyObject *call(PyObject *self, PyObject *args) {
         return NULL;
     } else {
         // call ocaml function and check if an exception was raised
-        res = caml_callback_exn(*func, Val_int(arg));
+        res = caml_callbackN_exn(*func, argc, unpacked_args);
         if (check_ml(res)) return NULL;
 
         PyObject *result = Py_BuildValue("i", Int_val(res));
@@ -98,17 +116,39 @@ PyMODINIT_FUNC initpyml(void) {
     (void) Py_InitModule(MODULE, pyml_methods);
 }
 
-CAMLprim value call_python(value f, value arg) {
-    PyObject *name, *module, *func, *args, *val;
+static PyObject *unpack_ocaml(value list) {
+    CAMLparam1(list);
+    CAMLlocal1(head);
+    head = list;
+    PyObject *args;
+
+    int i;
+    for(i = 0; list != Val_emptylist; i++) {
+        list = Field(list, 1);
+    }
+
+    list = head;
+    args = PyTuple_New(i);
+    for(int j=0; list != Val_emptylist; j++) {
+        PyObject *val = PyLong_FromLong((long)atoi(String_val(Field(list, 0))));
+        PyTuple_SetItem(args, j, val);
+        list = Field(list, 1);
+    }
+
+    return args;
+}
+
+CAMLprim value call_python(value f, value argv) {
+    CAMLparam1(argv);
+    PyObject *name, *module, *func, *args;
+
     // load module
     name = PyString_FromString(PYTHON);
     module = PyImport_Import(name);
 
     PYERR_IF(module != NULL,
         // build python tuple to use as argument
-        args = PyTuple_New(1);
-        val = PyLong_FromLong(Long_val(arg));
-        PyTuple_SetItem(args, 0, val);
+        args = unpack_ocaml(argv);
 
         // call python function
         func = PyObject_GetAttrString(module, String_val(f));
@@ -118,7 +158,6 @@ CAMLprim value call_python(value f, value arg) {
             // check if the python interpreter raised any exceptions
             if (check_py()) return Val_unit;
 
-            Py_DECREF(val);
             Py_DECREF(args);
 
             return Val_int((int) PyLong_AsLong(x));
@@ -165,15 +204,14 @@ static void run_ocaml_test(char *f, int expected) {
 }
 
 static void run_tests() {
-    // run simple call tests
     run_python_test("test_call", 10);
-    run_ocaml_test("test_call", 10);
-
-    // run exception raise/catch test
     run_python_test("test_exception", 1);
     run_python_test("test_custom_exception", 1);
+    run_python_test("test_n_args", 5);
+    run_ocaml_test("test_call", 10);
     run_ocaml_test("test_exception", 1);
     run_ocaml_test("test_custom_exception", 1);
+    run_ocaml_test("test_n_args", 5);
 }
 
 int main(int argc, char **argv) {
