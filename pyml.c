@@ -17,6 +17,46 @@
 #define MODULE "pyml"
 #define PYTHON "call"
 
+value py_to_ml(PyObject *obj) {
+    if (PyBool_Check(obj) == true) {
+        if (PyObject_IsTrue(obj)) {
+            return Val_bool(true);
+        } else {
+            return Val_bool(false);
+        }
+    } else if (PyInt_Check(obj) == true) {
+        return Val_int(PyInt_AsLong(obj));
+    } else if (PyLong_Check(obj) == true) {
+        return Val_long(PyInt_AsLong(obj));
+    } else if (PyString_Check(obj) == true) {
+        return caml_copy_string(PyString_AsString(obj));
+    } else if (PyFloat_Check(obj) == true) {
+        return caml_copy_double(PyFloat_AsDouble(obj));
+    } else {
+        return Val_unit;
+    }
+}
+
+PyObject *ml_to_py(value val) {
+    if (Is_long(val)) {
+        return Py_BuildValue("i", Int_val(val));
+    } else if (val == Val_true || val == Val_false) {
+        return PyBool_FromLong(Bool_val(val));
+    } else {
+        switch(Tag_val(val)) {
+            case String_tag:
+                return Py_BuildValue("s", String_val(val));
+                break;
+            case Double_tag:
+                return Py_BuildValue("d", Double_val(val));
+                break;
+            default:
+                return NULL;
+                break;
+        }
+    }
+}
+
 static void raise_python(char *exception) {
     PyErr_SetString(PyExc_Exception, exception);
 }
@@ -69,24 +109,7 @@ static value *unpack_python(PyObject *args) {
 
     for(int i=0; i < list_size; i++) {
         tmp = (PyObject*)PyList_GetItem(args, (Py_ssize_t)i);
-        if (PyBool_Check(tmp) == true) {
-            if (PyObject_IsTrue(tmp)) {
-                arg_array[i] = Val_bool(true);
-            } else {
-                arg_array[i] = Val_bool(false);
-            }
-        } else if (PyInt_Check(tmp) == true) {
-            arg_array[i] = Val_int((int)PyInt_AsLong(tmp));
-        } else if (PyLong_Check(tmp) == true) {
-            arg_array[i] = Val_long(PyInt_AsLong(tmp));
-        } else if (PyString_Check(tmp) == true) {
-            arg_array[i] = caml_copy_string(PyString_AsString(tmp));
-        } else if (PyFloat_Check(tmp) == true) {
-            arg_array[i] = caml_copy_double(PyFloat_AsDouble(tmp));
-        } else {
-            Py_XDECREF(tmp);
-            exit(-1);
-        }
+        arg_array[i] = py_to_ml(tmp);
     }
 
     Py_XDECREF(tmp);
@@ -119,23 +142,7 @@ static PyObject *call_ocaml(PyObject *self, PyObject *args) {
         res = caml_callbackN_exn(*func, argc, unpacked_args);
         if (check_ml(res)) return NULL;
 
-        if (Is_long(res)) {
-            return Py_BuildValue("i", Int_val(res));
-        } else if (res == Val_true || res == Val_false) {
-            return PyBool_FromLong(Bool_val(res));
-        } else {
-            switch(Tag_val(res)) {
-                case String_tag:
-                    return Py_BuildValue("s", String_val(res));
-                    break;
-                case Double_tag:
-                    return Py_BuildValue("d", Double_val(res));
-                    break;
-                default:
-                    return NULL;
-                    break;
-            }
-        }
+        return ml_to_py(res);
     }
 }
 
@@ -165,23 +172,7 @@ static PyObject *unpack_ocaml(value list) {
     args = PyTuple_New(i);
     for(int j=0; list != Val_emptylist; j++) {
         tmp = Field(list, 0);
-        if (Is_long(tmp)) {
-            val = Py_BuildValue("i", Int_val(tmp));
-        } else if (tmp == Val_true || tmp == Val_false) {
-            val = PyBool_FromLong(Bool_val(tmp));
-        } else {
-            switch(Tag_val(tmp)) {
-                case String_tag:
-                    val = Py_BuildValue("s", String_val(tmp));
-                    break;
-                case Double_tag:
-                    val = Py_BuildValue("d", Double_val(tmp));
-                    break;
-                default:
-                    val = NULL;
-                    break;
-            }
-        }
+        val = ml_to_py(tmp);
 
         PyTuple_SetItem(args, j, val);
         list = Field(list, 1);
@@ -215,24 +206,8 @@ CAMLprim value call_python(value f, value argv) {
             // check if the python interpreter raised any exceptions
             if (check_py()) return Val_unit;
 
-            if (PyBool_Check(x) == true) {
-                if (PyObject_IsTrue(x)) {
-                    return Val_bool(true);
-                } else {
-                    return Val_bool(false);
-                }
-            } else if (PyInt_Check(x) == true) {
-                return Val_int(PyInt_AsLong(x));
-            } else if (PyLong_Check(x) == true) {
-                return Val_long(PyInt_AsLong(x));
-            } else if (PyString_Check(x) == true) {
-                return caml_copy_string(PyString_AsString(x));
-            } else if (PyFloat_Check(x) == true) {
-                return caml_copy_double(PyFloat_AsDouble(x));
-            } else {
-                Py_XDECREF(x);
-                exit(-1);
-            }
+
+            return py_to_ml(x);
         }
     }
 
